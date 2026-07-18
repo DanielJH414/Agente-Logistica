@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from openpyxl import load_workbook
 from pypdf import PdfReader
@@ -271,10 +271,8 @@ def build_chunk_records(chunks: List[str], document_metadata: Dict[str, Any], fi
     return records
 
 
-def process_documents(root_dir: Path, output_dir: Path) -> List[Dict[str, Any]]:
+def process_documents(root_dir: Path) -> List[Dict[str, Any]]:
     """Procesa todos los documentos de una carpeta y devuelve un resumen con chunks y metadatos."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     results: List[Dict[str, Any]] = []
     files = sorted([p for p in root_dir.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS])
 
@@ -302,12 +300,6 @@ def process_documents(root_dir: Path, output_dir: Path) -> List[Dict[str, Any]]:
         }
         results.append(result)
 
-        output_path = output_dir / f"{file_path.stem}.txt"
-        output_path.write_text(cleaned_text[:4000], encoding="utf-8")
-
-        chunk_output_path = output_dir / f"{file_path.stem}_chunks.json"
-        chunk_output_path.write_text(json.dumps(chunk_records, ensure_ascii=False, indent=2), encoding="utf-8")
-
     return results
 
 
@@ -334,27 +326,25 @@ def print_extraction_report(results: List[Dict[str, Any]], preview_chars: int = 
         print("\n" + "-" * 90)
 
 
-def save_summary(results: List[Dict[str, Any]], output_dir: Path) -> None:
-    """Guarda un resumen JSON con los documentos procesados y sus metadatos."""
-    summary_path = output_dir / "resumen_documentos.json"
-    summary = {
+def save_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Devuelve un resumen JSON con los documentos procesados y sus metadatos."""
+    return {
         "generated_at": datetime.now().isoformat(),
         "documents": results,
     }
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parent.parent
     documents_dir = base_dir / "Documentos Nexus"
-    output_dir = Path(__file__).resolve().parent / "salida_procesamiento"
 
     if not documents_dir.exists():
         raise FileNotFoundError(f"No se encontró la carpeta de documentos: {documents_dir}")
 
-    results = process_documents(documents_dir, output_dir)
+    results = process_documents(documents_dir)
     print_extraction_report(results)
-    save_summary(results, output_dir)
+    summary = save_summary(results)
 
     print(f"\nArchivos procesados: {len(results)}")
-    print(f"Resultados guardados en: {output_dir}")
+    print("Resultados disponibles en memoria para usar en el agente o para serializarlos si lo necesitas.")
+    print(json.dumps(summary, ensure_ascii=False, indent=2)[:3000])
