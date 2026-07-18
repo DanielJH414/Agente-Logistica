@@ -1,0 +1,5 @@
+.venv-gemini-3/
+
+*/__pycache__/
+
+*salida_procesamiento/
