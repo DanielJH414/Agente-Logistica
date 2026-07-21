@@ -1,5 +1,27 @@
 .venv-gemini-3/
+.venv/
+venv/
 
-*/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
 
-*salida_procesamiento/
+**/salida_procesamiento/
+
+**/chroma_store/
+*.sqlite3
+*.db
+
+__init__.py
+_test_rag_service.py
+
+**/.env*
+**/my_keys.py
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.ipynb_checkpoints/
+*.log

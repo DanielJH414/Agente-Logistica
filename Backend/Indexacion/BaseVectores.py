@@ -56,25 +56,57 @@ class ChromaVectorStore:
     def count(self) -> int:
         return self.collection.count()
 
-    def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Busca los chunks más similares a una consulta."""
+    def query(
+        self,
+        query_text: str,
+        top_k: int = 5,
+        metadata_filter: Dict[str, Any] | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Busca los chunks más similares a una consulta.
+
+        Se puede aplicar un filtro de metadatos para reducir los resultados.
+        """
         embedding = self._embed_texts([query_text])[0]
-        results = self.collection.query(
-            query_embeddings=[embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+
+        query_kwargs: Dict[str, Any] = {}
+        if metadata_filter:
+            query_kwargs["where"] = normalize_metadata(metadata_filter)
+
+        try:
+            results = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"],
+                **query_kwargs,
+            )
+        except TypeError:
+            # Chroma older versions may no soportar el argumento `where`.
+            results = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"],
+            )
 
         matches: List[Dict[str, Any]] = []
-        for i in range(len(results["documents"][0])):
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+
+        for i in range(len(documents)):
+            if metadata_filter:
+                normalized = normalize_metadata(metadatas[i])
+                if not all(normalized.get(key) == value for key, value in normalize_metadata(metadata_filter).items()):
+                    continue
+
             matches.append(
                 {
-                    "document": results["documents"][0][i],
-                    "metadata": results["metadatas"][0][i],
-                    "distance": results["distances"][0][i],
+                    "document": documents[i],
+                    "metadata": metadatas[i],
+                    "distance": distances[i],
                 }
             )
-        return matches
+
+        return matches[:top_k]
 
     def save_snapshot(self, output_path: Path | str) -> None:
         """Guarda una instantánea de la colección en un JSON simple para inspección."""
