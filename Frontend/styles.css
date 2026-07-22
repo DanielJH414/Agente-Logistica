@@ -178,22 +178,41 @@ main {
   text-decoration: none;
 }
 
-.feedback-button {
+.feedback-controls {
+  display: flex;
+  gap: 8px;
   margin-top: 12px;
+}
+
+.feedback-button {
   align-self: flex-start;
   border: 1px solid var(--accent);
   background: transparent;
   color: var(--accent);
   font-weight: 600;
-  padding: 10px 16px;
+  padding: 10px 14px;
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .feedback-button:hover {
   background: var(--accent-soft);
   color: #1d4ed8;
+}
+
+.feedback-button--thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  font-size: 1.1rem;
+}
+
+.feedback-button--thumb.is-selected {
+  background: var(--accent);
+  color: white;
+  transform: translateY(-1px);
 }
 
 .documents {

@@ -12,28 +12,39 @@ import mimetypes
 backend_dir = Path(__file__).resolve().parent
 if str(backend_dir) not in sys.path:
     sys.path.append(str(backend_dir))
+database_dir = backend_dir / "Base de datos"
+if str(database_dir) not in sys.path:
+    sys.path.append(str(database_dir))
 
 from Indexacion.BaseVectores import ChromaVectorStore
 from RAG.Camada import RAGService
+from database import create_chat_log, get_connection, init_db, save_feedback
 
 static_dir = backend_dir.parent / "Frontend"
 vector_store_dir = backend_dir / "chroma_store"
 documents_dir = backend_dir / "Documentos Nexus"
 
 vector_store = ChromaVectorStore(persist_directory=vector_store_dir)
-if vector_store.count() == 0:
-    print("Vector store vacío. Generando índice a partir de Documentos Nexus...")
-    embeddings_module_path = backend_dir / "Indexacion" / "Con Embeddings" / "Embeddings.py"
-    spec = importlib.util.spec_from_file_location("embeddings_module", str(embeddings_module_path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"No se pudo cargar el módulo de embeddings desde {embeddings_module_path}")
-    embeddings_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(embeddings_module)
-    try:
-        summary = embeddings_module.run_embedding_pipeline()
-        print(f"Índice generado: {summary}")
-    except FileNotFoundError as exc:
-        print(f"No se pudo generar el índice automático: {exc}")
+
+init_db()
+pipeline_path = database_dir / "pipeline_sync.py"
+pipeline_spec = importlib.util.spec_from_file_location("pipeline_sync", pipeline_path)
+if pipeline_spec is None or pipeline_spec.loader is None:
+    raise ImportError(f"No se pudo cargar el sincronizador desde {pipeline_path}")
+pipeline_module = importlib.util.module_from_spec(pipeline_spec)
+pipeline_spec.loader.exec_module(pipeline_module)
+
+with get_connection() as startup_conn:
+    registered_count = startup_conn.execute("SELECT COUNT(*) FROM file_registry").fetchone()[0]
+if registered_count == 0 and vector_store.count() > 0:
+    existing_ids = vector_store.collection.get(include=[]).get("ids", [])
+    if existing_ids:
+        vector_store.collection.delete(ids=existing_ids)
+
+try:
+    print(f"Sincronización inicial: {pipeline_module.check_local_files(documents_dir, vector_store)}")
+except FileNotFoundError as exc:
+    print(f"No se pudo sincronizar Documentos Nexus: {exc}")
 
 try:
     rag_service = RAGService(vector_store=vector_store)
@@ -58,6 +69,8 @@ class BackendHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/ask":
             self.handle_ask()
+        elif parsed.path == "/api/feedback":
+            self.handle_feedback()
         else:
             self.send_error(404, "Endpoint no encontrado")
 
@@ -134,6 +147,9 @@ class BackendHandler(SimpleHTTPRequestHandler):
             return
 
         try:
+            sync_summary = pipeline_module.check_local_files(documents_dir, vector_store)
+            if sync_summary["created"] or sync_summary["updated"] or sync_summary["deleted"]:
+                print(f"Documentos sincronizados antes de la consulta: {sync_summary}")
             print(f"[API] Pregunta recibida: {question}")
             print("[API] Llamando a rag_service.answer_question()...")
             try:
@@ -157,6 +173,7 @@ class BackendHandler(SimpleHTTPRequestHandler):
                     print("[API] No se pudo escribir backend_debug.log dentro del inner-except")
                 raise
             print("[API] rag_service respondió correctamente")
+            log_id = create_chat_log(question, result.answer)
             try:
                 print(f"[API] result type: {type(result)}, sources: {len(result.sources) if getattr(result, 'sources', None) is not None else 0}")
             except Exception:
@@ -219,6 +236,7 @@ class BackendHandler(SimpleHTTPRequestHandler):
                     "sources": sources,
                     "used_fallback": result.used_fallback,
                     "used_generation": getattr(result, "used_generation", False),
+                    "log_id": log_id,
                 }
             )
         except Exception as exc:
@@ -237,6 +255,18 @@ class BackendHandler(SimpleHTTPRequestHandler):
                 {"error": "Error interno del servidor", "details": str(exc)},
                 status=500,
             )
+
+    def handle_feedback(self) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            log_id = int(body.get("log_id"))
+            rating = int(body.get("rating"))
+            comment = body.get("comment")
+            save_feedback(log_id, rating, str(comment) if comment is not None else None)
+            self.send_json({"ok": True, "log_id": log_id, "rating": rating})
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.send_json({"error": "Feedback inválido", "details": str(exc)}, status=400)
 
     def send_json(self, body: dict, status: int = 200) -> None:
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")

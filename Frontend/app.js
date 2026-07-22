@@ -6,10 +6,6 @@ const documentDetails = document.getElementById('documentDetails');
 const documentDetailsTitle = document.getElementById('documentDetailsTitle');
 const documentDetailsDescription = document.getElementById('documentDetailsDescription');
 const documentDetailsList = document.getElementById('documentDetailsList');
-const feedbackModal = document.getElementById('feedbackModal');
-const feedbackClose = document.getElementById('feedbackClose');
-const feedbackForm = document.getElementById('feedbackForm');
-const feedbackText = document.getElementById('feedbackText');
 
 let documentFolders = [];
 
@@ -23,7 +19,61 @@ const sampleAgentResponse = (question) => ({
   ]
 });
 
-const addMessage = ({ role, text, sources }) => {
+const addFeedbackControls = (container, logId) => {
+  const controls = document.createElement('div');
+  controls.className = 'feedback-controls';
+
+  const positiveButton = document.createElement('button');
+  positiveButton.type = 'button';
+  positiveButton.className = 'feedback-button feedback-button--thumb';
+  positiveButton.setAttribute('aria-label', 'Marcar respuesta como útil');
+  positiveButton.setAttribute('aria-pressed', 'false');
+  positiveButton.title = 'Respuesta útil';
+  positiveButton.innerHTML = '👍';
+
+  const negativeButton = document.createElement('button');
+  negativeButton.type = 'button';
+  negativeButton.className = 'feedback-button feedback-button--thumb';
+  negativeButton.setAttribute('aria-label', 'Marcar respuesta como poco útil');
+  negativeButton.setAttribute('aria-pressed', 'false');
+  negativeButton.title = 'Respuesta poco útil';
+  negativeButton.innerHTML = '👎';
+
+  const selectFeedback = async (selectedButton, otherButton, rating) => {
+    selectedButton.classList.add('is-selected');
+    otherButton.classList.remove('is-selected');
+    selectedButton.setAttribute('aria-pressed', 'true');
+    otherButton.setAttribute('aria-pressed', 'false');
+    controls.dataset.feedback = String(rating);
+
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ log_id: logId, rating }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('No se pudo guardar el feedback:', error);
+    }
+  };
+
+  positiveButton.addEventListener('click', () => {
+    selectFeedback(positiveButton, negativeButton, 1);
+  });
+
+  negativeButton.addEventListener('click', () => {
+    selectFeedback(negativeButton, positiveButton, -1);
+  });
+
+  controls.appendChild(positiveButton);
+  controls.appendChild(negativeButton);
+  container.appendChild(controls);
+};
+
+const addMessage = ({ role, text, sources, logId = null, showFeedback = false }) => {
   const card = document.createElement('article');
   card.className = `message ${role}`;
 
@@ -59,14 +109,9 @@ const addMessage = ({ role, text, sources }) => {
     sourcesSection.appendChild(list);
     card.appendChild(sourcesSection);
 
-    const feedback = document.createElement('button');
-    feedback.className = 'feedback-button';
-    feedback.textContent = 'Dar feedback';
-    feedback.addEventListener('click', () => {
-      feedbackModal.classList.remove('hidden');
-      feedbackText.focus();
-    });
-    card.appendChild(feedback);
+    if (showFeedback && logId !== null) {
+      addFeedbackControls(card, logId);
+    }
   }
 
   chatHistory.appendChild(card);
@@ -188,14 +233,7 @@ const sendMessage = async () => {
         lastMessage.appendChild(sourcesSection);
       }
 
-      const feedbackButton = document.createElement('button');
-      feedbackButton.className = 'feedback-button';
-      feedbackButton.textContent = 'Dar feedback';
-      feedbackButton.addEventListener('click', () => {
-        feedbackModal.classList.remove('hidden');
-        feedbackText.focus();
-      });
-      lastMessage.appendChild(feedbackButton);
+      addFeedbackControls(lastMessage, data.log_id);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Error inesperado al conectar con el agente.';
@@ -212,27 +250,12 @@ userInput.addEventListener('keydown', (event) => {
   }
 });
 
-feedbackClose.addEventListener('click', () => {
-  feedbackModal.classList.add('hidden');
-});
-
-feedbackModal.addEventListener('click', (event) => {
-  if (event.target === feedbackModal || event.target.classList.contains('modal__backdrop')) {
-    feedbackModal.classList.add('hidden');
-  }
-});
-
-feedbackForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const comment = feedbackText.value.trim();
-  if (!comment) return;
-
-  feedbackModal.classList.add('hidden');
-  feedbackText.value = '';
-  addMessage({ role: 'agent', text: 'Gracias por tu feedback. Hemos registrado tu comentario para mejorar las respuestas del agente.' });
-});
-
 renderDocuments();
-addMessage({ role: 'agent', text: 'Bienvenido al chat del Agente IA. Haz una pregunta y verás la respuesta con fuentes y feedback.', sources: [
-  { label: 'Guía inicial', link: '#', caption: 'Explica cómo usar el chat' }
-] });
+addMessage({
+  role: 'agent',
+  text: 'Bienvenido al chat del Agente IA. Haz una pregunta y verás la respuesta con fuentes y feedback.',
+  sources: [
+    { label: 'Guía inicial', link: '#', caption: 'Explica cómo usar el chat' }
+  ],
+  showFeedback: true
+});
