@@ -15,7 +15,8 @@ from BaseVectores import ChromaVectorStore
 
 def load_processor_module() -> Any:
     """Carga el módulo de procesamiento desde la carpeta de procesamiento."""
-    processor_path = Path(__file__).resolve().parent.parent / "Procesar Documentos" / "Procesamiento.py"
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    processor_path = backend_dir / "Procesar Documentos" / "Procesamiento.py"
     spec = importlib.util.spec_from_file_location("procesamiento_module", processor_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"No se pudo cargar el módulo de procesamiento desde {processor_path}")
@@ -59,7 +60,8 @@ def build_index_documents(processed_documents: List[Dict[str, Any]]) -> List[Dic
 def create_vector_index(processed_documents: List[Dict[str, Any]], persist_directory: Path | None = None) -> ChromaVectorStore:
     """Crea o reutiliza una colección Chroma y carga los documentos procesados."""
     if persist_directory is None:
-        persist_directory = Path(__file__).resolve().parent.parent / "chroma_store"
+        backend_dir = Path(__file__).resolve().parent.parent.parent
+        persist_directory = backend_dir / "chroma_store"
 
     persist_directory.mkdir(parents=True, exist_ok=True)
     vector_store = ChromaVectorStore(persist_directory=persist_directory, collection_name="nexus_documents")
@@ -73,7 +75,7 @@ def create_vector_index(processed_documents: List[Dict[str, Any]], persist_direc
 
 def run_embedding_pipeline() -> Dict[str, Any]:
     """Ejecuta el pipeline completo: procesamiento -> embeddings -> indexación."""
-    base_dir = Path(__file__).resolve().parent.parent
+    base_dir = Path(__file__).resolve().parent.parent.parent
     documents_dir = base_dir / "Documentos Nexus"
 
     if not documents_dir.exists():

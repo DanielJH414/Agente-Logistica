@@ -1,7 +1,7 @@
 # Generación de respuestas del agente
 
-GROQ_LLAMA3_8B = "llama3-8b-8192"
-GROQ_LLAMA3_70B = "llama3-70b-8192"
+GROQ_LLAMA3_8B = "llama-3.1-8b-instant"
+GROQ_LLAMA3_70B = "llama-3.3-70b-versatile"
 GROQ_MIXTRAL = "mixtral-8x7b-32768"
 
 # Modelo para la reclasificación

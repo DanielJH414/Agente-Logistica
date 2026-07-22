@@ -8,15 +8,14 @@ venv/
 
 **/salida_procesamiento/
 
+**/pruebas/
+**/temporales/
 **/chroma_store/
 *.sqlite3
 *.db
 
-__init__.py
-_test_rag_service.py
-
-**/.env*
-**/my_keys.py
+.env*
+my_keys.py
 
 .pytest_cache/
 .mypy_cache/

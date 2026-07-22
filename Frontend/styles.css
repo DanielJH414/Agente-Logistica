@@ -208,12 +208,128 @@ main {
   border: 1px solid #e5e7eb;
   border-radius: 18px;
   background: #ffffff;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
 }
 
 .document-card:hover {
   transform: translateY(-1px);
   border-color: #dbeafe;
+}
+
+.document-details {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f9fafb;
+}
+
+.document-details.hidden {
+  display: none;
+}
+
+.document-details__header h3 {
+  margin: 0 0 8px;
+  font-size: 0.96rem;
+}
+
+.document-details__header p {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.document-details__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.document-details__item {
+  padding: 12px 14px;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.modal__panel {
+  position: relative;
+  width: min(480px, calc(100% - 32px));
+  padding: 28px;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 36px 84px rgba(15, 23, 42, 0.22);
+  z-index: 1;
+}
+
+.modal__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.modal__panel h2 {
+  margin-top: 0;
+}
+
+#feedbackForm {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+#feedbackForm textarea {
+  width: 100%;
+  min-height: 130px;
+  border: 1px solid #d1d5db;
+  border-radius: 18px;
+  padding: 16px;
+  resize: vertical;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+
+.button {
+  border: none;
+  border-radius: 16px;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+
+.button--primary {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
 }
 
 .document-card__title {

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
-import re
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -38,6 +42,7 @@ class RAGResult:
     sources: List[Dict[str, Any]]
     candidates: List[Dict[str, Any]]
     used_fallback: bool
+    used_generation: bool = False
 
 
 class RAGService:
@@ -200,42 +205,154 @@ class RAGService:
 
         return "\n".join(lines)
 
+    def _extract_direct_answer(self, question: str, reranked_candidates: List[Dict[str, Any]], max_chars: int = 900) -> str:
+        normalized_question = self._normalize_text(question)
+        keywords = [word for word in normalized_question.split() if len(word) > 4]
+        if not keywords:
+            return ""
+
+        hits: List[str] = []
+        for candidate in reranked_candidates[:4]:
+            document = str(candidate.get("document", ""))
+            if not document:
+                continue
+            sentences = re.split(r"(?<=[.!?])\s+", document)
+            for sentence in sentences:
+                if any(keyword in self._normalize_text(sentence) for keyword in keywords):
+                    snippet = sentence.strip()
+                    if snippet and snippet not in hits:
+                        hits.append(snippet)
+                    break
+            if len(" ".join(hits)) >= max_chars:
+                break
+
+        if not hits:
+            return ""
+
+        extracted = " ".join(hits)
+        if len(extracted) > max_chars:
+            extracted = extracted[:max_chars].rsplit(" ", 1)[0] + "..."
+
+        return f"Información relevante extraída de los documentos:\n{extracted}"
+
+    def _generate_with_ollama(self, prompt: str, max_tokens: int = 512, temperature: float = 0.0) -> str:
+        """Genera una respuesta localmente con Ollama si el servicio está disponible."""
+        model_name = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        try:
+            request = Request(
+                "http://127.0.0.1:11434/api/generate",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urlopen(request, timeout=60) as response:
+                body = json.loads(response.read().decode("utf-8"))
+                return str(body.get("response", "")).strip()
+        except (URLError, TimeoutError, json.JSONDecodeError, OSError):
+            return ""
+
+    def _extract_text_from_response(self, response: Any) -> str:
+        if response is None:
+            return ""
+        if isinstance(response, str):
+            return response.strip()
+
+        if hasattr(response, "text"):
+            return str(getattr(response, "text", "")).strip()
+        if hasattr(response, "output_text"):
+            return str(getattr(response, "output_text", "")).strip()
+        if hasattr(response, "response"):
+            return str(getattr(response, "response", "")).strip()
+
+        choices = getattr(response, "choices", None)
+        if choices:
+            if isinstance(choices, (list, tuple)) and choices:
+                first_choice = choices[0]
+                if isinstance(first_choice, dict):
+                    if "text" in first_choice:
+                        return str(first_choice["text"]).strip()
+                    message = first_choice.get("message")
+                    if isinstance(message, dict) and "content" in message:
+                        return str(message["content"]).strip()
+                if hasattr(first_choice, "text"):
+                    return str(getattr(first_choice, "text", "")).strip()
+                if hasattr(first_choice, "message"):
+                    message = getattr(first_choice, "message")
+                    if message is not None:
+                        if isinstance(message, dict) and "content" in message:
+                            return str(message["content"]).strip()
+                        if hasattr(message, "content"):
+                            return str(getattr(message, "content", "")).strip()
+        return ""
+
     def generate_answer(
         self,
         question: str,
         context: str,
+        reranked_candidates: Optional[List[Dict[str, Any]]] = None,
         max_tokens: int = 512,
         temperature: float = 0.0,
-    ) -> str:
-        """Genera una respuesta final con Groq usando el contexto ensamblado."""
-        if not self.groq_client:
-            raise RuntimeError(
-                "Groq client no disponible. Instala el paquete groq y configura GROQ_API_KEY."
-            )
-
+    ) -> tuple[str, bool]:
+        """Genera una respuesta final con Groq si está configurado; si no, intenta Ollama local o extracción directa de contexto."""
         prompt = self._build_answer_prompt(question, context)
-        try:
-            if hasattr(self.groq_client, "generate"):
-                response = self.groq_client.generate(
-                    model=self.groq_model,
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                return str(response)
 
-            if hasattr(self.groq_client, "completion"):
-                response = self.groq_client.completion.create(
-                    model=self.groq_model,
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                return response.choices[0].text
+        if self.groq_client:
+            try:
+                print(f"[RAG] Usando Groq para generación con modelo {self.groq_model}")
+                if hasattr(self.groq_client, "chat") and hasattr(self.groq_client.chat, "completions"):
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        }
+                    ]
+                    response = self.groq_client.chat.completions.create(
+                        model=self.groq_model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    answer_text = self._extract_text_from_response(response)
+                    if answer_text:
+                        return answer_text, True
 
-            raise RuntimeError("No se reconoce la interfaz del cliente Groq.")
-        except Exception as exc:
-            raise RuntimeError(f"Error generando respuesta con Groq: {exc}") from exc
+                if hasattr(self.groq_client, "completion"):
+                    response = self.groq_client.completion.create(
+                        model=self.groq_model,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    answer_text = self._extract_text_from_response(response)
+                    if answer_text:
+                        return answer_text, True
+            except Exception as exc:
+                print(f"[RAG] Error al generar con Groq: {exc}")
+                pass
+
+        ollama_answer = self._generate_with_ollama(prompt, max_tokens=max_tokens, temperature=temperature)
+        if ollama_answer:
+            return ollama_answer, True
+
+        if reranked_candidates is not None:
+            direct_answer = self._extract_direct_answer(question, reranked_candidates)
+            if direct_answer:
+                return direct_answer, False
+
+        return (
+            "No tengo suficiente información en los documentos recuperados para responder con certeza. "
+            "(No hay un proveedor de generación disponible.)",
+            False,
+        )
 
     def answer_question(
         self,
@@ -245,7 +362,7 @@ class RAGService:
         rerank_top_n: int = 5,
         context_max_chars: int = 3000,
         include_metadata_keys: Optional[List[str]] = None,
-        confidence_threshold: float = 0.25,
+        confidence_threshold: float = 0.05,
     ) -> RAGResult:
         """Ejecuta el flujo completo RAG: recuperación, reranking, ensamblaje, validación y generación."""
         candidates = self.retrieve(query=question, top_k=top_k, metadata_filter=metadata_filter)
@@ -260,6 +377,7 @@ class RAGService:
                 sources=[],
                 candidates=[],
                 used_fallback=True,
+                used_generation=False,
             )
 
         best_candidate = reranked[0]
@@ -273,13 +391,22 @@ class RAGService:
                 sources=[{"metadata": candidate.get("metadata", {}), "distance": candidate.get("distance")} for candidate in reranked],
                 candidates=reranked,
                 used_fallback=True,
+                used_generation=False,
             )
 
         context = self.assemble_context(reranked, max_chars=context_max_chars, include_metadata_keys=include_metadata_keys)
-        answer = self.generate_answer(question=question, context=context)
+        try:
+            answer, used_generation = self.generate_answer(question=question, context=context, reranked_candidates=reranked)
+        except Exception:
+            answer = (
+                "No tengo suficiente información en los documentos recuperados para responder con certeza. "
+                "(Error al generar la respuesta con el servicio Groq.)"
+            )
+            used_generation = False
+
         is_supported, support_score = self._score_context_support(question=question, generated_answer=answer, context=context)
 
-        if not is_supported or support_score < confidence_threshold:
+        if (not used_generation and (not is_supported or support_score < confidence_threshold)) or answer.startswith("No tengo suficiente información"):
             fallback = "No tengo suficiente información en los documentos recuperados para responder con certeza."
             return RAGResult(
                 query=question,
@@ -288,6 +415,7 @@ class RAGService:
                 sources=[{"metadata": candidate.get("metadata", {}), "distance": candidate.get("distance")} for candidate in reranked],
                 candidates=reranked,
                 used_fallback=True,
+                used_generation=used_generation,
             )
 
         return RAGResult(
@@ -297,6 +425,7 @@ class RAGService:
             sources=[{"metadata": candidate.get("metadata", {}), "distance": candidate.get("distance")} for candidate in reranked],
             candidates=reranked,
             used_fallback=False,
+            used_generation=used_generation,
         )
 
 
