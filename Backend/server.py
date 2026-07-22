@@ -6,7 +6,8 @@ import sys
 import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote, unquote
+import mimetypes
 
 backend_dir = Path(__file__).resolve().parent
 if str(backend_dir) not in sys.path:
@@ -17,6 +18,7 @@ from RAG.Camada import RAGService
 
 static_dir = backend_dir.parent / "Frontend"
 vector_store_dir = backend_dir / "chroma_store"
+documents_dir = backend_dir / "Documentos Nexus"
 
 vector_store = ChromaVectorStore(persist_directory=vector_store_dir)
 if vector_store.count() == 0:
@@ -59,6 +61,66 @@ class BackendHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404, "Endpoint no encontrado")
 
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        # API endpoint returning the Documentos Nexus structure
+        if parsed.path == "/api/documents":
+            try:
+                docs = []
+                base = documents_dir.resolve()
+                for p in sorted(base.rglob('*')):
+                    if p.is_file():
+                        rel = p.relative_to(base)
+                        parts = rel.parts
+                        top = parts[0] if parts else ''
+                        docs.append({
+                            'top': top,
+                            'name': p.name,
+                            'relative_path': str(rel).replace('\\', '/'),
+                        })
+                # Group by top-level folder and exclude internal folders like 'Responsables'
+                folders = {}
+                for entry in docs:
+                    top = entry['top'] or 'root'
+                    if top == 'Responsables':
+                        continue
+                    folders.setdefault(top, []).append({'name': entry['name'], 'relative_path': entry['relative_path']})
+                resp = [{'id': i+1, 'title': k, 'source': k, 'files': v} for i, (k, v) in enumerate(sorted(folders.items()))]
+                self.send_json({'folders': resp})
+            except Exception as exc:
+                print('Error building /api/documents:', exc)
+                self.send_json({'error': 'No se pudo listar documentos'}, status=500)
+            return
+
+        # Serve document files under /documentos/... mapped to Backend/Documentos Nexus
+        if parsed.path.startswith("/documentos/"):
+            # URL-decode the requested path segments so filesystem lookup matches
+            rel_path = unquote(parsed.path[len("/documentos/"):])
+            # Prevent directory traversal
+            target = (documents_dir / Path(rel_path)).resolve()
+            try:
+                if not str(target).startswith(str(documents_dir.resolve())) or not target.exists():
+                    self.send_error(404, "Documento no encontrado")
+                    return
+                # Guess mime type
+                ctype, _ = mimetypes.guess_type(str(target))
+                if ctype is None:
+                    ctype = "application/octet-stream"
+                with open(target, "rb") as fh:
+                    data = fh.read()
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception as exc:
+                print(f"Error sirviendo documento {target}: {exc}")
+                self.send_error(500, "Error interno al servir documento")
+                return
+            # Fallback to normal static handling (Frontend)
+        return super().do_GET()
+
     def handle_ask(self) -> None:
         try:
             content_length = int(self.headers.get("Content-Length", 0))
@@ -100,21 +162,55 @@ class BackendHandler(SimpleHTTPRequestHandler):
             except Exception:
                 print("[API] No se pudo inspeccionar result.sources")
             sources = []
+            seen_paths = set()
             for idx, source in enumerate(result.sources or [], start=1):
                 metadata = source.get("metadata", {}) or {}
-                label = (
-                    metadata.get("source_file")
-                    or metadata.get("relative_path")
-                    or metadata.get("id")
-                    or f"Fuente {idx}"
-                )
                 caption = (
                     metadata.get("area")
                     or metadata.get("department")
                     or metadata.get("categoria")
                     or ""
                 )
-                sources.append({"label": label, "link": "#", "caption": caption})
+
+                rel_candidate = metadata.get("relative_path") or metadata.get("source_file") or metadata.get("id")
+                resolved_path = None
+                if rel_candidate:
+                    try:
+                        rel_norm = str(rel_candidate).replace('\\', '/').lstrip('/')
+                        candidate = (documents_dir / Path(rel_norm))
+                        if candidate.exists():
+                            resolved = candidate.resolve()
+                            # Ensure it's inside documents_dir
+                            if str(resolved).startswith(str(documents_dir.resolve())):
+                                resolved_path = resolved
+                        else:
+                            # Try to find by filename anywhere under documents_dir
+                            name_only = Path(rel_norm).name
+                            matches = list(documents_dir.rglob(name_only))
+                            if matches:
+                                resolved_path = matches[0].resolve()
+                    except Exception:
+                        resolved_path = None
+
+                if not resolved_path:
+                    # skip sources without an actual file
+                    continue
+
+                # Deduplicate by real path
+                real_key = str(resolved_path)
+                if real_key in seen_paths:
+                    continue
+                seen_paths.add(real_key)
+
+                # label shown to user: use filename
+                label = resolved_path.name
+
+                # Build link using URL-encoded path relative to documents_dir
+                rel = resolved_path.relative_to(documents_dir.resolve())
+                parts = [quote(p) for p in rel.parts if p]
+                link = f"/documentos/{'/'.join(parts)}"
+
+                sources.append({"label": label, "link": link, "caption": caption})
 
             self.send_json(
                 {

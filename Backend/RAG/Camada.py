@@ -195,13 +195,62 @@ class RAGService:
     def _format_answer_with_sources(self, answer: str, sources: List[Dict[str, Any]]) -> str:
         if not answer:
             return "No tengo suficiente información en los documentos recuperados para responder con certeza."
-
+        # Deduplicate sources by relative path / source_file / id
+        seen = set()
+        seen_display = set()
         lines = [answer.strip(), "", "Referencias:"]
-        for i, source in enumerate(sources, start=1):
+        idx = 1
+        docs_base = backend_dir / "Documentos Nexus"
+
+        for source in sources:
             metadata = source.get("metadata", {}) or {}
-            source_name = metadata.get("source_file") or metadata.get("relative_path") or metadata.get("id") or f"Fuente {i}"
-            area = metadata.get("area") or metadata.get("department") or metadata.get("categoria") or "Sin área"
-            lines.append(f"{i}. {source_name} — Área: {area}")
+            raw_key = metadata.get("relative_path") or metadata.get("source_file") or metadata.get("id") or None
+            key_norm = str(raw_key).strip().lower() if raw_key is not None else None
+            if key_norm in seen:
+                continue
+            if key_norm:
+                seen.add(key_norm)
+
+            # Determine display name
+            display_name = None
+            if metadata.get("relative_path"):
+                display_name = Path(str(metadata.get("relative_path"))).name
+            elif metadata.get("source_file"):
+                display_name = Path(str(metadata.get("source_file"))).name
+            elif metadata.get("id"):
+                display_name = str(metadata.get("id"))
+            else:
+                display_name = f"Fuente {idx}"
+
+            # Determine area: prefer metadata fields, otherwise infer from relative_path folder
+            area = (
+                metadata.get("area")
+                or metadata.get("department")
+                or metadata.get("categoria")
+                or None
+            )
+            if not area and metadata.get("relative_path"):
+                try:
+                    candidate = docs_base / Path(str(metadata.get("relative_path")))
+                    if candidate.exists():
+                        # top-level folder name as area
+                        parts = candidate.relative_to(docs_base).parts
+                        if parts:
+                            area = parts[0]
+                except Exception:
+                    area = None
+
+            # Deduplicate by display name as well (covers missing relative_path)
+            display_key = str(display_name).strip().lower()
+            if display_key in seen_display:
+                continue
+            seen_display.add(display_key)
+
+            if not area:
+                area = "Sin área"
+
+            lines.append(f"{idx}. {display_name} — Área: {area}")
+            idx += 1
 
         return "\n".join(lines)
 

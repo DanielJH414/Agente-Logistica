@@ -11,41 +11,9 @@ const feedbackClose = document.getElementById('feedbackClose');
 const feedbackForm = document.getElementById('feedbackForm');
 const feedbackText = document.getElementById('feedbackText');
 
-const documentFolders = [
-  {
-    id: 1,
-    title: 'Logística',
-    subtitle: 'Carpeta de proceso y rutas',
-    source: 'Logística / Manual',
-    files: [
-      'Manual de operaciones de logística.pdf',
-      'Rutas y cronograma.xlsx',
-      'Política de envíos.docx'
-    ]
-  },
-  {
-    id: 2,
-    title: 'Financiero',
-    subtitle: 'Carpeta de presupuestos y costos',
-    source: 'Financiero / Resumen',
-    files: [
-      'Informe de costos 2026.pdf',
-      'Presupuesto trimestral.xlsx',
-      'Análisis de ahorros.docx'
-    ]
-  },
-  {
-    id: 3,
-    title: 'Servicio al cliente',
-    subtitle: 'Carpeta de atención y reclamos',
-    source: 'Servicio al cliente / Protocolo',
-    files: [
-      'Guía de atención al cliente.pdf',
-      'Proceso de reclamos.xlsx',
-      'FAQ y soporte.docx'
-    ]
-  }
-];
+let documentFolders = [];
+
+let currentOpenFolderId = null;
 
 const sampleAgentResponse = (question) => ({
   text: `Hola, esta es una respuesta del agente para: "${question}". He revisado los documentos disponibles y te brindo la información más relevante.`,
@@ -106,31 +74,54 @@ const addMessage = ({ role, text, sources }) => {
 };
 
 const showDocumentDetails = (folder) => {
+  // Toggle behavior: close if same folder is already open
+  if (currentOpenFolderId === folder.id && !documentDetails.classList.contains('hidden')) {
+    documentDetails.classList.add('hidden');
+    currentOpenFolderId = null;
+    return;
+  }
+
+  currentOpenFolderId = folder.id;
   documentDetailsTitle.textContent = folder.title;
   documentDetailsDescription.textContent = `Archivos en la carpeta ${folder.source}`;
   documentDetailsList.innerHTML = '';
   folder.files.forEach((file) => {
     const item = document.createElement('li');
     item.className = 'document-details__item';
-    item.textContent = file;
+    const link = document.createElement('a');
+    // file may be an object { name, relative_path }
+    const rel = (file.relative_path || file).split('/').map(encodeURIComponent).join('/');
+    link.href = `/documentos/${rel}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = file.name || file;
+    item.appendChild(link);
     documentDetailsList.appendChild(item);
   });
   documentDetails.classList.remove('hidden');
 };
 
-const renderDocuments = () => {
+const renderDocuments = async () => {
   documentList.innerHTML = '';
-  documentFolders.forEach((folder) => {
-    const card = document.createElement('article');
-    card.className = 'document-card';
-    card.innerHTML = `
-      <h3 class="document-card__title">${folder.title}</h3>
-      <p class="document-card__meta">${folder.subtitle}</p>
-      <p class="document-card__meta">Origen: ${folder.source}</p>
-    `;
-    card.addEventListener('click', () => showDocumentDetails(folder));
-    documentList.appendChild(card);
-  });
+  try {
+    const resp = await fetch('/api/documents');
+    const data = await resp.json();
+    const folders = Array.isArray(data.folders) ? data.folders : [];
+    documentFolders = folders;
+    folders.forEach((folder) => {
+      const card = document.createElement('article');
+      card.className = 'document-card';
+      card.innerHTML = `
+        <h3 class="document-card__title">${folder.title}</h3>
+        <p class="document-card__meta">Origen: ${folder.source}</p>
+      `;
+      card.addEventListener('click', () => showDocumentDetails(folder));
+      documentList.appendChild(card);
+    });
+  } catch (err) {
+    console.error('No se pudo obtener la lista de documentos:', err);
+    documentList.innerHTML = '<p class="error">No se pudieron cargar los documentos.</p>';
+  }
 };
 
 const apiUrl = 'http://127.0.0.1:8000/api/ask';
