@@ -15,10 +15,14 @@ if str(backend_dir) not in sys.path:
 database_dir = backend_dir / "Base de datos"
 if str(database_dir) not in sys.path:
     sys.path.append(str(database_dir))
+oracle_cloud_dir = backend_dir / "Oracle cloud"
+if str(oracle_cloud_dir) not in sys.path:
+    sys.path.append(str(oracle_cloud_dir))
 
 from Indexacion.BaseVectores import ChromaVectorStore
 from RAG.Camada import RAGService
 from database import create_chat_log, get_connection, init_db, save_feedback
+from documentos_oci import sync_object_storage
 
 static_dir = backend_dir.parent / "Frontend"
 vector_store_dir = backend_dir / "chroma_store"
@@ -33,6 +37,11 @@ if pipeline_spec is None or pipeline_spec.loader is None:
     raise ImportError(f"No se pudo cargar el sincronizador desde {pipeline_path}")
 pipeline_module = importlib.util.module_from_spec(pipeline_spec)
 pipeline_spec.loader.exec_module(pipeline_module)
+
+try:
+    print(f"Sincronización desde OCI: {sync_object_storage(documents_dir)}")
+except Exception as exc:
+    raise RuntimeError(f"No se pudo sincronizar el caché local desde OCI: {exc}") from exc
 
 with get_connection() as startup_conn:
     registered_count = startup_conn.execute("SELECT COUNT(*) FROM file_registry").fetchone()[0]

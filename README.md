@@ -11,6 +11,7 @@ Te sitúas dentro de la carpeta backend para instalar las dependencias dentro de
 python -m venv .venv-gemini-3
 .\.venv-gemini-3\Scripts\activate
 python -m pip install --upgrade pip 
+python -m pip install oci python-dotenv
 ```
 
 # Modelos de IA
@@ -50,6 +51,9 @@ Estas son las dependencias externas utilizadas por el backend:
 | `pypdf` | Extracción de texto y metadatos de archivos PDF. |
 | `pdfplumber` | Método alternativo para extraer texto de archivos PDF. |
 | `python-docx` | Lectura de documentos `.docx`. |
+| `oci` | Conexión con Oracle Cloud Infrastructure Object Storage para descargar y sincronizar documentos. |
+| `oracledb` | Conexión mediante wallet mTLS con Oracle Autonomous Database para el registro de archivos, conversaciones y feedback. |
+| `python-dotenv` | Carga de variables de configuración desde el archivo `.env`. |
 
 El proyecto también procesa archivos `.csv`, `.txt`, `.md`, `.json`, `.xml`, `.yaml` y `.yml` utilizando las herramientas de lectura incluidas en Python.
 
@@ -57,10 +61,26 @@ El proyecto también procesa archivos `.csv`, `.txt`, `.md`, `.json`, `.xml`, `.
 
 No necesitan instalación con `pip`:
 
-- `sqlite3`: base de datos local para el registro de archivos, conversaciones y feedback.
+- `oracledb`: conexión con Oracle Autonomous Database para el registro de archivos, conversaciones y feedback.
 - `http.server`: servidor HTTP del backend.
 - `json`, `pathlib`, `re`, `os`, `sys`, `datetime` y `urllib`: procesamiento de datos, rutas, texto y solicitudes HTTP.
 
 ## Configuración de las API
 
 Para utilizar el reranking y la generación de respuestas, configura las claves de Cohere y Groq en `Backend/modelos/my_keys.py` o mediante el mecanismo de configuración que utilice tu entorno.
+
+## Configuración de Oracle Cloud Infrastructure
+
+Durante las pruebas locales, configura el archivo de OCI en `~/.oci/config` y verifica que el perfil `DEFAULT` tenga permisos para leer objetos del bucket. No incluyas la clave privada ni otros secretos en el repositorio.
+
+La sincronización utiliza estos valores por defecto:
+
+| Configuración | Valor |
+| --- | --- |
+| `OCI_NAMESPACE` | `axtvg0vgl5uf` |
+| `OCI_BUCKET` | `Documentos-Nexus` |
+| `OCI_REGION` | `sa-bogota-1` |
+| `OCI_PROFILE` | `DEFAULT` |
+| `OCI_PREFIX` | vacío, usa todo el bucket |
+
+Puedes sobrescribirlos mediante variables de entorno. Al iniciar el servidor, los documentos se descargan en `Backend/Documentos Nexus`, conservando las carpetas `Financiero`, `Responsables`, `Logística` y `Servicio al cliente`. Los cambios y eliminaciones remotos se reflejan después en ChromaDB.

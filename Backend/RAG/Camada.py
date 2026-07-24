@@ -164,8 +164,11 @@ class RAGService:
 
     def _build_answer_prompt(self, question: str, context: str) -> str:
         return (
-            "Responde la pregunta usando únicamente la información proporcionada en el contexto. "
-            "No inventes información. Si no hay una respuesta clara y respaldada por el contexto, responde exactamente: "
+            "Eres un asistente de logística. Responde en español usando únicamente la información del contexto. "
+            "El contexto contiene fragmentos de documentos internos y debes buscar allí la respuesta, "
+            "aunque la pregunta use palabras distintas o tenga errores ortográficos. "
+            "Resume los datos relevantes de forma directa y menciona plazos, condiciones o pasos cuando aparezcan. "
+            "No inventes información. Solo si el contexto no contiene ningún dato relacionado con la pregunta, responde exactamente: "
             "No tengo suficiente información en los documentos recuperados para responder con certeza.\n\n"
             f"Contexto:\n{context}\n\nPregunta: {question}\nRespuesta:"
         )
@@ -455,7 +458,14 @@ class RAGService:
 
         is_supported, support_score = self._score_context_support(question=question, generated_answer=answer, context=context)
 
-        if (not used_generation and (not is_supported or support_score < confidence_threshold)) or answer.startswith("No tengo suficiente información"):
+        if answer.startswith("No tengo suficiente información"):
+            direct_answer = self._extract_direct_answer(question, reranked)
+            if direct_answer:
+                answer = direct_answer
+                is_supported = True
+                support_score = 1.0
+
+        if (not used_generation and (not is_supported or support_score < confidence_threshold)):
             fallback = "No tengo suficiente información en los documentos recuperados para responder con certeza."
             return RAGResult(
                 query=question,

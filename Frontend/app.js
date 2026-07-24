@@ -11,14 +11,6 @@ let documentFolders = [];
 
 let currentOpenFolderId = null;
 
-const sampleAgentResponse = (question) => ({
-  text: `Hola, esta es una respuesta del agente para: "${question}". He revisado los documentos disponibles y te brindo la información más relevante.`,
-  sources: [
-    { label: 'Documento de logística', link: '#', caption: 'Sección: seguimiento de envíos' },
-    { label: 'Informe financiero', link: '#', caption: 'Costos y optimización' }
-  ]
-});
-
 const addFeedbackControls = (container, logId) => {
   const controls = document.createElement('div');
   controls.className = 'feedback-controls';
@@ -251,11 +243,3 @@ userInput.addEventListener('keydown', (event) => {
 });
 
 renderDocuments();
-addMessage({
-  role: 'agent',
-  text: 'Bienvenido al chat del Agente IA. Haz una pregunta y verás la respuesta con fuentes y feedback.',
-  sources: [
-    { label: 'Guía inicial', link: '#', caption: 'Explica cómo usar el chat' }
-  ],
-  showFeedback: true
-});

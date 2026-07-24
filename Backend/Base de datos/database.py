@@ -1,74 +1,198 @@
-import sqlite3
+from __future__ import annotations
+
 import os
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+from typing import Any
 
-# Obtiene la ruta absoluta de la carpeta actual donde está database.py
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+import oracledb
+from dotenv import load_dotenv
 
-# Define la ruta completa para que el archivo .db quede guardado aquí mismo
-DB_NAME = os.path.join(BASE_DIR, "project_maintenance.db")
 
-def get_connection():
-    """Crea y retorna una conexión a la base de datos SQLite en la carpeta Base de datos."""
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
 
-# Resto de tus funciones de creación de tablas (init_db, etc.)
-def init_db():
-    """Crea las tablas necesarias para el mantenimiento y los logs."""
-    conn = get_connection()
-    cursor = conn.cursor()
 
-    # 1. Tabla para el Pipeline de Actualización (Control de archivos locales)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS file_registry (
-            file_path TEXT PRIMARY KEY,
-            file_hash TEXT NOT NULL,
-            last_modified TIMESTAMP NOT NULL,
-            last_indexed TIMESTAMP NOT NULL
+class OracleRow(Mapping[str, Any]):
+    """Fila compatible con el acceso por nombre y por posición usado por el backend."""
+
+    def __init__(self, columns: list[str], values: tuple[Any, ...]):
+        self._values = values
+        self._data = dict(zip(columns, values))
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return self._data[key.lower()]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+
+class OracleCursor:
+    def __init__(self, cursor: oracledb.Cursor):
+        self._cursor = cursor
+        self._columns = [description[0].lower() for description in cursor.description or ()]
+
+    def _row(self, values: tuple[Any, ...] | None) -> OracleRow | None:
+        return OracleRow(self._columns, values) if values is not None else None
+
+    def fetchone(self) -> OracleRow | None:
+        return self._row(self._cursor.fetchone())
+
+    def fetchall(self) -> list[OracleRow]:
+        return [self._row(row) for row in self._cursor.fetchall()]
+
+    def __iter__(self) -> Iterator[OracleRow]:
+        for row in self._cursor:
+            yield self._row(row)
+
+
+class OracleConnection:
+    """Adaptador que conserva la interfaz de conexión usada por el backend."""
+
+    def __init__(self, connection: oracledb.Connection):
+        self._connection = connection
+
+    def execute(self, statement: str, parameters: Mapping[str, Any] | None = None) -> OracleCursor:
+        cursor = self._connection.cursor()
+        cursor.execute(statement, parameters or {})
+        return OracleCursor(cursor)
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def __enter__(self) -> "OracleConnection":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        if exc_type is not None:
+            self.rollback()
+        self.close()
+
+
+def _required_setting(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Falta configurar {name} en el archivo .env")
+    return value
+
+
+def get_connection() -> OracleConnection:
+    """Abre una conexión Oracle Autonomous Database mediante el wallet mTLS."""
+    config_dir = Path(_required_setting("ORACLE_CONFIG_DIR"))
+    if not config_dir.is_absolute():
+        config_dir = PROJECT_ROOT / config_dir
+    config_dir = config_dir.resolve()
+    if not config_dir.is_dir():
+        raise RuntimeError(f"No existe el directorio del wallet: {config_dir}")
+
+    wallet_location = Path(os.getenv("ORACLE_WALLET_LOCATION", str(config_dir)))
+    if not wallet_location.is_absolute():
+        wallet_location = PROJECT_ROOT / wallet_location
+
+    connection = oracledb.connect(
+        user=_required_setting("ORACLE_USER"),
+        password=_required_setting("ORACLE_PASSWORD"),
+        dsn=_required_setting("ORACLE_DSN"),
+        config_dir=str(config_dir),
+        wallet_location=str(wallet_location.resolve()),
+        wallet_password=os.getenv("ORACLE_WALLET_PASSWORD") or os.getenv("ORACLE_PASSWORD"),
+    )
+    return OracleConnection(connection)
+
+
+def _create_table_if_missing(conn: OracleConnection, table_name: str, statement: str) -> None:
+    exists = conn.execute(
+        "SELECT 1 FROM user_tables WHERE table_name = :table_name",
+        {"table_name": table_name.upper()},
+    ).fetchone()
+    if exists is None:
+        conn.execute(statement)
+
+
+def init_db() -> None:
+    """Crea en Oracle las tablas equivalentes a las que usaba SQLite."""
+    with get_connection() as conn:
+        _create_table_if_missing(
+            conn,
+            "FILE_REGISTRY",
+            """
+            CREATE TABLE file_registry (
+                file_path VARCHAR2(1000 CHAR) PRIMARY KEY,
+                file_hash VARCHAR2(64 CHAR) NOT NULL,
+                last_modified TIMESTAMP NOT NULL,
+                last_indexed TIMESTAMP NOT NULL
+            )
+            """,
         )
-    """)
-
-    # 2. Tabla para el Historial de Conversaciones / Logs
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS chat_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_query TEXT NOT NULL,
-            agent_response TEXT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        _create_table_if_missing(
+            conn,
+            "CHAT_LOGS",
+            """
+            CREATE TABLE chat_logs (
+                id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                user_query CLOB NOT NULL,
+                agent_response CLOB NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+            """,
         )
-    """)
-
-    # 3. Tabla para el Feedback del usuario
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_feedback (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            log_id INTEGER,
-            rating INTEGER, -- Ej: 1 para pulgar arriba, 0 o -1 para pulgar abajo
-            comment TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (log_id) REFERENCES chat_logs(id)
+        _create_table_if_missing(
+            conn,
+            "USER_FEEDBACK",
+            """
+            CREATE TABLE user_feedback (
+                id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                log_id NUMBER NOT NULL,
+                rating NUMBER(1) NOT NULL,
+                feedback_comment CLOB,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                CONSTRAINT fk_feedback_chat_log FOREIGN KEY (log_id) REFERENCES chat_logs(id),
+                CONSTRAINT ck_feedback_rating CHECK (rating IN (-1, 1))
+            )
+            """,
         )
-    """)
-    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_feedback_log_id ON user_feedback(log_id)")
-
-    conn.commit()
-    conn.close()
-    print("Base de datos y tablas inicializadas correctamente.")
+        index_exists = conn.execute(
+            "SELECT 1 FROM user_indexes WHERE index_name = :index_name",
+            {"index_name": "IDX_USER_FEEDBACK_LOG_ID"},
+        ).fetchone()
+        if index_exists is None:
+            conn.execute("CREATE UNIQUE INDEX idx_user_feedback_log_id ON user_feedback(log_id)")
+        conn.commit()
+    print("Base de datos Oracle y tablas inicializadas correctamente.")
 
 
 def create_chat_log(user_query: str, agent_response: str) -> int:
-    """Guarda una interacción y devuelve el identificador que usará el feedback."""
+    """Guarda una interacción y devuelve el identificador usado por el feedback."""
     if not user_query.strip() or not agent_response.strip():
         raise ValueError("La pregunta y la respuesta no pueden estar vacías.")
 
     with get_connection() as conn:
-        cursor = conn.execute(
-            "INSERT INTO chat_logs (user_query, agent_response) VALUES (?, ?)",
-            (user_query, agent_response),
+        cursor = conn._connection.cursor()
+        generated_id = cursor.var(int)
+        cursor.execute(
+            """
+            INSERT INTO chat_logs (user_query, agent_response)
+            VALUES (:user_query, :agent_response)
+            RETURNING id INTO :generated_id
+            """,
+            {"user_query": user_query, "agent_response": agent_response, "generated_id": generated_id},
         )
-        return int(cursor.lastrowid)
+        conn.commit()
+        returned_id = generated_id.getvalue()
+        if isinstance(returned_id, list):
+            returned_id = returned_id[0]
+        return int(returned_id)
 
 
 def save_feedback(log_id: int, rating: int, comment: str | None = None) -> None:
@@ -77,20 +201,30 @@ def save_feedback(log_id: int, rating: int, comment: str | None = None) -> None:
         raise ValueError("La calificación debe ser 1 o -1.")
 
     with get_connection() as conn:
-        if conn.execute("SELECT 1 FROM chat_logs WHERE id = ?", (log_id,)).fetchone() is None:
+        if conn.execute(
+            "SELECT 1 FROM chat_logs WHERE id = :log_id", {"log_id": log_id}
+        ).fetchone() is None:
             raise ValueError("La interacción indicada no existe.")
 
         conn.execute(
             """
-            INSERT INTO user_feedback (log_id, rating, comment)
-            VALUES (?, ?, ?)
-            ON CONFLICT(log_id) DO UPDATE SET
-                rating = excluded.rating,
-                comment = excluded.comment,
-                timestamp = CURRENT_TIMESTAMP
+            MERGE INTO user_feedback target
+            USING (
+                SELECT :log_id AS log_id, :rating AS rating, :feedback_text AS feedback_comment
+                FROM dual
+            ) source
+            ON (target.log_id = source.log_id)
+            WHEN MATCHED THEN UPDATE SET
+                target.rating = source.rating,
+                target.feedback_comment = source.feedback_comment,
+                target.timestamp = CURRENT_TIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (log_id, rating, feedback_comment)
+                VALUES (source.log_id, source.rating, source.feedback_comment)
             """,
-            (log_id, rating, comment),
+            {"log_id": log_id, "rating": rating, "feedback_text": comment},
         )
+        conn.commit()
+
 
 if __name__ == "__main__":
     init_db()

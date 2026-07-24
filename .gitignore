@@ -6,13 +6,19 @@ venv/
 *.py[cod]
 *.pyo
 
-**/salida_procesamiento/
 
+
+Backend/Documentos Nexus/
+**/Documentos Nexus/
+**/Wallet_Metricas/
+**/salida_procesamiento/
 **/pruebas/
 **/temporales/
 **/chroma_store/
 *.sqlite3
 *.db
+*.oci-etag
+*.oci-download
 
 .env*
 my_keys.py

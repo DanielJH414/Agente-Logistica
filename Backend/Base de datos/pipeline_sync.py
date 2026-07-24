@@ -59,7 +59,7 @@ def check_local_files(folder_path: str | Path, vector_store: Any) -> Dict[str, i
         for path in folder.rglob("*")
         if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     }
-    now = datetime.now().isoformat()
+    now = datetime.now()
     summary = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0, "chunks": 0}
 
     with get_connection() as conn:
@@ -76,21 +76,21 @@ def check_local_files(folder_path: str | Path, vector_store: Any) -> Dict[str, i
             chunks = _index_document(vector_store, processing_module, path, folder)
             if old:
                 conn.execute(
-                    "UPDATE file_registry SET file_hash = ?, last_modified = ?, last_indexed = ? WHERE file_path = ?",
-                    (file_hash, now, now, relative_path),
+                    "UPDATE file_registry SET file_hash = :file_hash, last_modified = :last_modified, last_indexed = :last_indexed WHERE file_path = :file_path",
+                    {"file_hash": file_hash, "last_modified": now, "last_indexed": now, "file_path": relative_path},
                 )
                 summary["updated"] += 1
             else:
                 conn.execute(
-                    "INSERT INTO file_registry (file_path, file_hash, last_modified, last_indexed) VALUES (?, ?, ?, ?)",
-                    (relative_path, file_hash, now, now),
+                    "INSERT INTO file_registry (file_path, file_hash, last_modified, last_indexed) VALUES (:file_path, :file_hash, :last_modified, :last_indexed)",
+                    {"file_path": relative_path, "file_hash": file_hash, "last_modified": now, "last_indexed": now},
                 )
                 summary["created"] += 1
             summary["chunks"] += chunks
 
         for relative_path in set(registered) - set(current_files):
             vector_store.collection.delete(where={"relative_path": relative_path})
-            conn.execute("DELETE FROM file_registry WHERE file_path = ?", (relative_path,))
+            conn.execute("DELETE FROM file_registry WHERE file_path = :file_path", {"file_path": relative_path})
             summary["deleted"] += 1
 
     return summary
