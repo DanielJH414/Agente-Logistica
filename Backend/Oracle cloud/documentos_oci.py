@@ -77,12 +77,22 @@ def sync_object_storage(local_folder: str | Path) -> Dict[str, int]:
 	region = _config_value("OCI_REGION", DEFAULT_REGION)
 	profile = _config_value("OCI_PROFILE", DEFAULT_PROFILE)
 	prefix = _config_value("OCI_PREFIX", "").strip("/")
-	config_file = os.getenv("OCI_CONFIG_FILE", "").strip() or os.path.expanduser("~/.oci/config")
 
-	config = oci.config.from_file(file_location=config_file, profile_name=profile)
-	config["region"] = region
-	client = oci.object_storage.ObjectStorageClient(config)
-
+	is_production = os.getenv("ENVIRONMENT") == "production"
+	if is_production:
+		try:
+			signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+			client = oci.object_storage.ObjectStorageClient(config={'region':region}, signer=signer)
+		except Exception as e:
+			print(f"Error al crear el cliente de OCI: {e}")
+			raise e
+	else:
+		config_file = os.getenv("OCI_CONFIG_FILE", "").strip() or os.path.expanduser("~/.oci/config")
+		config = oci.config.from_file(file_location=config_file, profile_name=profile)
+		config["region"] = region
+		client = oci.object_storage.ObjectStorageClient(config)
+		print("Autenticación OCI: Usando ~/.oci/config (Local)")
+		
 	remote_paths: set[Path] = set()
 	summary = {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0}
 
