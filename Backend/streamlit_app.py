@@ -23,11 +23,16 @@ with st.sidebar:
         st.write(f"Sincronización OCI: {runtime['sync_summary']}")
         if runtime.get("init_error"):
             st.warning(f"Oracle no está disponible en este momento: {runtime['init_error']}")
+        if runtime.get("loading_error"):
+            st.error(f"Error al inicializar el motor: {runtime['loading_error']}")
 
     if st.button("Inicializar motor"):
         with st.spinner("Inicializando el motor RAG y la sincronización con OCI..."):
             st.session_state.runtime = get_runtime()
             runtime = st.session_state.runtime
+
+    st.header("Explorar documentos")
+    document_payload = get_document_payload()
 
     st.header("Explorar documentos")
     document_payload = get_document_payload()

@@ -39,12 +39,40 @@ def _load_pipeline_module() -> Any:
 
 @lru_cache(maxsize=1)
 def get_runtime() -> Dict[str, Any]:
-    from Indexacion.BaseVectores import ChromaVectorStore
-    from RAG.Camada import RAGService
-    from database import create_chat_log, get_connection, init_db, save_feedback
-    from documentos_oci import sync_object_storage
+    try:
+        from Indexacion.BaseVectores import ChromaVectorStore
+        from RAG.Camada import RAGService
+        from database import create_chat_log, get_connection, init_db, save_feedback
+        from documentos_oci import sync_object_storage
+    except Exception as exc:
+        error_message = f"No se pudieron cargar las dependencias necesarias: {exc}"
+        print(error_message)
+        return {
+            "vector_store": None,
+            "rag_service": None,
+            "pipeline_module": None,
+            "documents_dir": DOCUMENTS_DIR,
+            "static_dir": STATIC_DIR,
+            "sync_summary": {"error": error_message},
+            "init_error": exc,
+            "loading_error": exc,
+        }
 
-    vector_store = ChromaVectorStore(persist_directory=VECTOR_STORE_DIR)
+    try:
+        vector_store = ChromaVectorStore(persist_directory=VECTOR_STORE_DIR)
+    except Exception as exc:
+        error_message = f"No se pudo inicializar el almacén vectorial: {exc}"
+        print(error_message)
+        return {
+            "vector_store": None,
+            "rag_service": None,
+            "pipeline_module": None,
+            "documents_dir": DOCUMENTS_DIR,
+            "static_dir": STATIC_DIR,
+            "sync_summary": {"error": error_message},
+            "init_error": exc,
+            "loading_error": exc,
+        }
 
     init_error: Exception | None = None
     try:
@@ -93,6 +121,7 @@ def get_runtime() -> Dict[str, Any]:
         "static_dir": STATIC_DIR,
         "sync_summary": sync_summary,
         "init_error": init_error,
+        "loading_error": None,
     }
 
 
