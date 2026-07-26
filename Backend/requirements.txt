@@ -1,0 +1,11 @@
+streamlit
+chromadb
+sentence-transformers
+oci
+python-dotenv
+oracledb
+pdfplumber
+python-docx
+openpyxl
+cohere
+groq
