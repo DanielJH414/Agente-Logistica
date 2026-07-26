@@ -22,11 +22,6 @@ oracle_cloud_dir = backend_dir / "Oracle cloud"
 if str(oracle_cloud_dir) not in sys.path:
     sys.path.append(str(oracle_cloud_dir))
 
-from Indexacion.BaseVectores import ChromaVectorStore
-from RAG.Camada import RAGService
-from database import create_chat_log, get_connection, init_db, save_feedback
-from documentos_oci import sync_object_storage
-
 STATIC_DIR = backend_dir.parent / "Frontend"
 VECTOR_STORE_DIR = backend_dir / "chroma_store"
 DOCUMENTS_DIR = backend_dir / "Documentos Nexus"
@@ -44,6 +39,11 @@ def _load_pipeline_module() -> Any:
 
 @lru_cache(maxsize=1)
 def get_runtime() -> Dict[str, Any]:
+    from Indexacion.BaseVectores import ChromaVectorStore
+    from RAG.Camada import RAGService
+    from database import create_chat_log, get_connection, init_db, save_feedback
+    from documentos_oci import sync_object_storage
+
     vector_store = ChromaVectorStore(persist_directory=VECTOR_STORE_DIR)
 
     init_error: Exception | None = None
@@ -177,6 +177,8 @@ def ask_question(question: str, top_k: int = 8, rerank_top_n: int = 5) -> Dict[s
     if not question.strip():
         raise ValueError("La pregunta no puede estar vacía.")
 
+    from database import create_chat_log
+
     runtime = get_runtime()
     rag_service = runtime.get("rag_service")
     if rag_service is None:
@@ -215,6 +217,8 @@ def ask_question(question: str, top_k: int = 8, rerank_top_n: int = 5) -> Dict[s
 
 
 def submit_feedback(log_id: int, rating: int, comment: str | None = None) -> Dict[str, Any]:
+    from database import save_feedback
+
     save_feedback(log_id, rating, comment)
     return {"ok": True, "log_id": log_id, "rating": rating}
 
