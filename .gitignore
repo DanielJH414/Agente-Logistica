@@ -21,7 +21,8 @@ Backend/Documentos Nexus/
 *.oci-download
 
 .env*
-my_keys.py
+/my_keys.py
+!Backend/modelos/my_keys.py
 
 .pytest_cache/
 .mypy_cache/
