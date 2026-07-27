@@ -16,36 +16,41 @@ st.set_page_config(page_title="Agente Logística", page_icon="📦", layout="wid
 if "runtime" not in st.session_state:
     st.session_state.runtime = None
 
+if st.session_state.runtime is None:
+    with st.spinner("Inicializando el motor RAG y la sincronización con OCI..."):
+        st.session_state.runtime = get_runtime()
+
 runtime = st.session_state.runtime
 
 st.title("Agente de IA para documentos logísticos")
 
 with st.sidebar:
     st.header("Estado")
-    st.write(f"Documentos base: {get_documents_dir()}")
     if runtime is None:
-        st.info("El motor aún no se ha inicializado.")
+        st.info("No fue posible inicializar el motor en este momento.")
     else:
+        st.write(f"Documentos base: {get_documents_dir()}")
         st.write(f"Sincronización OCI: {runtime['sync_summary']}")
         if runtime.get("init_error"):
             st.warning(f"Oracle no está disponible en este momento: {runtime['init_error']}")
         if runtime.get("loading_error"):
             st.error(f"Error al inicializar el motor: {runtime['loading_error']}")
 
-    if st.button("Inicializar motor"):
-        with st.spinner("Inicializando el motor RAG y la sincronización con OCI..."):
+    if st.button("Actualizar motor"):
+        with st.spinner("Actualizando el motor RAG y la sincronización con OCI..."):
             st.session_state.runtime = get_runtime()
             runtime = st.session_state.runtime
-
-    st.header("Explorar documentos")
-    document_payload = get_document_payload()
 
     st.header("Explorar documentos")
     document_payload = get_document_payload()
     for folder in document_payload.get("folders", []):
         with st.expander(folder["title"], expanded=False):
             for file in folder.get("files", []):
-                st.write(f"- {file['name']}")
+                url = file.get("url", "#")
+                if file["name"].lower().endswith(".pdf"):
+                    st.markdown(f'- <a href="{url}" target="_blank">{file["name"]}</a>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'- <a href="{url}">{file["name"]}</a>', unsafe_allow_html=True)
 
 question = st.text_area("Escribe tu pregunta sobre documentos, procesos o políticas", height=120)
 if st.button("Consultar") and question.strip():
@@ -64,5 +69,3 @@ if st.button("Consultar") and question.strip():
         st.subheader("Fuentes")
         for source in response["sources"]:
             st.write(f"- {source['label']} ({source['caption']})")
-
-    st.caption(f"Sincronización previa: {response['sync_summary']}")

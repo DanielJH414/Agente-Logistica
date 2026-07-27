@@ -84,7 +84,6 @@ def _load_pipeline_module() -> Any:
     return pipeline_module
 
 
-@lru_cache(maxsize=1)
 def get_runtime() -> Dict[str, Any]:
     documents_dir = get_documents_dir()
     static_dir = get_static_dir()
@@ -182,14 +181,18 @@ def build_document_folders(base_dir: Path | str | None = None) -> Dict[str, Any]
     docs: List[Dict[str, Any]] = []
     for path in sorted(base.rglob("*")):
         if path.is_file():
+            if path.name.endswith(".oci-etag") or path.name.endswith(".oci-download"):
+                continue
             rel = path.relative_to(base)
             parts = rel.parts
             top = parts[0] if parts else ""
+            url = f"/documentos/{'/'.join(quote(part) for part in parts)}"
             docs.append(
                 {
                     "top": top,
                     "name": path.name,
                     "relative_path": str(rel).replace("\\", "/"),
+                    "url": url,
                 }
             )
 
@@ -199,7 +202,11 @@ def build_document_folders(base_dir: Path | str | None = None) -> Dict[str, Any]
         if top == "Responsables":
             continue
         folders.setdefault(top, []).append(
-            {"name": entry["name"], "relative_path": entry["relative_path"]}
+            {
+                "name": entry["name"],
+                "relative_path": entry["relative_path"],
+                "url": entry["url"],
+            }
         )
 
     return {"folders": [{"id": i + 1, "title": k, "source": k, "files": v} for i, (k, v) in enumerate(sorted(folders.items()))]}
