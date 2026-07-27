@@ -101,12 +101,12 @@ def _rewrite_config_key_file(config_content: str, private_key_path: Path) -> str
 			match = re.match(r"^(?P<indent>\s*key_file\s*=\s*)(?P<value>.*)$", line)
 			if match:
 				indent = match.group("indent")
-				lines.append(f'{indent}"{clean_path}"')
+				lines.append(f'{indent}{clean_path}')
 				replaced = True
 				continue
 		lines.append(line)
 	if not replaced:
-		lines.append(f'key_file = "{clean_path}"')
+		lines.append(f'key_file = {clean_path}')
 	return "\n".join(lines) + "\n"
 
 
