@@ -2,6 +2,7 @@ streamlit
 chromadb
 sentence-transformers
 oci
+torchvision
 python-dotenv
 oracledb
 pdfplumber
