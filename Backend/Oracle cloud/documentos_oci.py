@@ -79,6 +79,30 @@ def _iter_objects(client: Any, namespace: str, bucket: str, prefix: str) -> Iter
 			break
 
 
+def _resolve_config_file() -> Path | None:
+	"""Resuelve el archivo de configuración OCI desde secret o ruta relativa."""
+	repo_root = Path(__file__).resolve().parents[2]
+	config_file = _config_value("OCI_CONFIG_FILE", "").strip()
+	if config_file:
+		candidate = Path(config_file).expanduser()
+		if not candidate.is_absolute():
+			candidate = (repo_root / candidate).resolve()
+		if candidate.exists():
+			return candidate
+
+	config_content = _config_value("OCI_CONFIG_CONTENT", "")
+	if config_content:
+		config_path = Path(os.getenv("TMPDIR", "/tmp")) / "oci_config.toml"
+		config_path.write_text(config_content, encoding="utf-8")
+		return config_path
+
+	default_path = Path(os.path.expanduser("~/.oci/config"))
+	if default_path.exists():
+		return default_path
+
+	return None
+
+
 def sync_object_storage(local_folder: str | Path) -> Dict[str, int]:
 	"""Replica el bucket de OCI en la carpeta local usada por el pipeline."""
 	local_root = Path(local_folder).resolve()
@@ -100,15 +124,14 @@ def sync_object_storage(local_folder: str | Path) -> Dict[str, int]:
 				print(f"Error al crear el cliente de OCI con Instance Principals: {e}")
 				raise e
 		else:
-			config_file = os.getenv("OCI_CONFIG_FILE", "").strip() or os.path.expanduser("~/.oci/config")
-			if os.path.exists(config_file):
-				config = oci.config.from_file(file_location=config_file, profile_name=profile)
-				config["region"] = region
-				client = oci.object_storage.ObjectStorageClient(config)
-				print("Autenticación OCI: Usando ~/.oci/config (Local)")
-			else:
-				print("Autenticación OCI: no se encontró ~/.oci/config; se omite la sincronización con el bucket")
+			config_file = _resolve_config_file()
+			if config_file is None:
+				print("Autenticación OCI: no se encontró el archivo de configuración OCI; se omite la sincronización con el bucket")
 				return {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0, "error": "OCI config not found"}
+			config = oci.config.from_file(file_location=str(config_file), profile_name=profile)
+			config["region"] = region
+			client = oci.object_storage.ObjectStorageClient(config)
+			print(f"Autenticación OCI: usando config desde {config_file}")
 	except Exception as exc:
 		print(f"No se pudo inicializar OCI: {exc}")
 		return {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0, "error": str(exc)}
