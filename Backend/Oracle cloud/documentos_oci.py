@@ -96,8 +96,7 @@ def _rewrite_config_key_file(config_content: str, private_key_path: Path) -> str
 	for line in config_content.splitlines():
 		stripped = line.strip()
 		if stripped.startswith("key_file") and "=" in line:
-			quote = '"' if '"' in line else "'"
-			lines.append(f'key_file = {quote}{private_key_path.as_posix()}{quote}')
+			lines.append(f'key_file = "{private_key_path.as_posix()}"')
 			replaced = True
 		else:
 			lines.append(line)
