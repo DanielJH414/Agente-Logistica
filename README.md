@@ -7,8 +7,8 @@ Este proyecto consiste en el desarrollo de un agente de IA escalable utilizando 
 
 https://agente-logistica.streamlit.app/
 
-![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/Funcionamiento_deploy2.png)
-![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/Prueba_deploy.png)
+![Funcionamiento del proyecto](./Fotos%20de%20la%20ejecuci%C3%B3n%20del%20proyecto/Funcionamiento_deploy2.png)
+![Funcionamiento del proyecto](./Fotos%20de%20la%20ejecuci%C3%B3n%20del%20proyecto/Prueba_deploy.png)
 
 # Abrir y ejecutar el proyecto
 
