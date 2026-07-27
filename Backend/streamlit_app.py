@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import os
 
 import streamlit as st
 
@@ -21,7 +22,7 @@ if "initializing" not in st.session_state:
 
 runtime = st.session_state.runtime
 
-st.title("Agente de IA para documentos logísticos")
+st.title("Agente de IA Nexus Logistics LATAM")
 
 with st.sidebar:
     st.header("Estado")
@@ -30,7 +31,6 @@ with st.sidebar:
     elif runtime is None:
         st.info("El motor RAG y la sincronización OCI están pendientes. Pulsa 'Actualizar motor' para iniciar.")
     else:
-        st.write(f"Documentos base: {get_documents_dir()}")
         st.write("Documentos indexados")
         if runtime.get("init_error"):
             st.warning(f"Oracle no está disponible en este momento: {runtime['init_error']}")
@@ -45,15 +45,27 @@ with st.sidebar:
         st.session_state.initializing = False
 
     st.header("Explorar documentos")
+    # Backend base URL used to serve `/documentos/...` routes. Can be overridden with BACKEND_URL env var.
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+
     document_payload = get_document_payload()
     for folder in document_payload.get("folders", []):
         with st.expander(folder["title"], expanded=False):
             for file in folder.get("files", []):
                 url = file.get("url", "#")
-                if file["name"].lower().endswith(".pdf"):
-                    st.markdown(f'- <a href="{url}" target="_blank">{file["name"]}</a>', unsafe_allow_html=True)
+                # If the URL is a server-side `/documentos/...` route, prefix it with the backend base URL
+                if url.startswith("/documentos/"):
+                    full_url = f"{backend_url}{url}"
                 else:
-                    st.markdown(f'- <a href="{url}">{file["name"]}</a>', unsafe_allow_html=True)
+                    full_url = url
+
+                if file["name"].lower().endswith(".pdf"):
+                    st.markdown(
+                        f'- <a href="{full_url}" target="_blank" rel="noreferrer noopener">{file["name"]}</a>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(f'- <a href="{full_url}">{file["name"]}</a>', unsafe_allow_html=True)
 
 with st.form(key="ask_form"):
     question = st.text_input(

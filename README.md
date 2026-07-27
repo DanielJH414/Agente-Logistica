@@ -2,6 +2,9 @@
 
 Este proyecto consiste en el desarrollo de un agente de IA escalable utilizando técnicas de Retrieval-Augmented Generation (RAG) para optimizar el acceso y procesamiento de información corporativa de una empresa de logística, el agente de IA va a ser público para los integrantes de la empresa, con el fin de que responder distintas dudas sobre temas de la empresa (financieros, logísticos, y de servicio al cliente).
 
+# Funcionamiento del proyecto
+
+![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/image.png)
 
 # Abrir y ejecutar el proyecto
 
@@ -10,8 +13,14 @@ Te sitúas dentro de la carpeta backend para instalar las dependencias dentro de
 ```powershell
 python -m venv .venv-gemini-3
 .\.venv-gemini-3\Scripts\activate
-python -m pip install --upgrade pip 
-python -m pip install oci python-dotenv
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Si prefieres instalar las dependencias manualmente, usa estos comando en la terminal:
+
+```powershell
+python -m pip install streamlit torchvision
 ```
 
 # Modelos de IA
@@ -43,8 +52,10 @@ Estas son las dependencias externas utilizadas por el backend:
 
 | Paquete | Uso en el proyecto |
 | --- | --- |
+| `streamlit` | Ejecución de la interfaz web del proyecto. |
 | `chromadb` | Almacén vectorial persistente para indexar y consultar los documentos. |
 | `sentence-transformers` | Generación de embeddings para los documentos y las consultas. Utiliza el modelo `sentence-transformers/all-MiniLM-L6-v2`. |
+| `torchvision` | Dependencia complementaria para ciertos componentes de procesamiento de modelos visuales y embeddings. |
 | `cohere` | Reordenamiento (`rerank`) de los resultados recuperados. Es opcional si no se configura una clave de Cohere. |
 | `groq` | Generación de respuestas mediante los modelos de Groq. Es opcional si no se configura una clave de Groq. |
 | `openpyxl` | Lectura del contenido de archivos `.xlsx` y `.xls`. |
