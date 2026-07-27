@@ -91,17 +91,22 @@ def _write_temp_file(directory: Path, filename: str, content: str) -> Path:
 
 
 def _rewrite_config_key_file(config_content: str, private_key_path: Path) -> str:
+	import re
+
 	lines: list[str] = []
 	replaced = False
+	clean_path = private_key_path.as_posix().replace('"', '').replace("'", "")
 	for line in config_content.splitlines():
-		stripped = line.strip()
-		if stripped.startswith("key_file") and "=" in line:
-			lines.append(f'key_file = "{private_key_path.as_posix()}"')
-			replaced = True
-		else:
-			lines.append(line)
+		if "key_file" in line and "=" in line:
+			match = re.match(r"^(?P<indent>\s*key_file\s*=\s*)(?P<value>.*)$", line)
+			if match:
+				indent = match.group("indent")
+				lines.append(f'{indent}"{clean_path}"')
+				replaced = True
+				continue
+		lines.append(line)
 	if not replaced:
-		lines.append(f'key_file = "{private_key_path.as_posix()}"')
+		lines.append(f'key_file = "{clean_path}"')
 	return "\n".join(lines) + "\n"
 
 
