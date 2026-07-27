@@ -2,9 +2,13 @@
 
 Este proyecto consiste en el desarrollo de un agente de IA escalable utilizando técnicas de Retrieval-Augmented Generation (RAG) para optimizar el acceso y procesamiento de información corporativa de una empresa de logística, el agente de IA va a ser público para los integrantes de la empresa, con el fin de que responder distintas dudas sobre temas de la empresa (financieros, logísticos, y de servicio al cliente).
 
+
 # Funcionamiento del proyecto
 
-![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/image.png)
+https://agente-logistica.streamlit.app/
+
+![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/Funcionamiento_deploy2.png)
+![Funcionamiento del proyecto](Fotos de la ejecución del proyecto/Prueba_deploy.png)
 
 # Abrir y ejecutar el proyecto
 
