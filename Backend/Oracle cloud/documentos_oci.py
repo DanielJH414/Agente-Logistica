@@ -79,6 +79,33 @@ def _iter_objects(client: Any, namespace: str, bucket: str, prefix: str) -> Iter
 			break
 
 
+def _write_temp_file(directory: Path, filename: str, content: str) -> Path:
+	directory.mkdir(parents=True, exist_ok=True)
+	target = directory / filename
+	target.write_text(content, encoding="utf-8")
+	try:
+		target.chmod(0o600)
+	except Exception:
+		pass
+	return target
+
+
+def _rewrite_config_key_file(config_content: str, private_key_path: Path) -> str:
+	lines: list[str] = []
+	replaced = False
+	for line in config_content.splitlines():
+		stripped = line.strip()
+		if stripped.startswith("key_file") and "=" in line:
+			quote = '"' if '"' in line else "'"
+			lines.append(f'key_file = {quote}{private_key_path.as_posix()}{quote}')
+			replaced = True
+		else:
+			lines.append(line)
+	if not replaced:
+		lines.append(f'key_file = "{private_key_path.as_posix()}"')
+	return "\n".join(lines) + "\n"
+
+
 def _resolve_config_file() -> Path | None:
 	"""Resuelve el archivo de configuración OCI desde secret o ruta relativa."""
 	repo_root = Path(__file__).resolve().parents[2]
@@ -92,9 +119,12 @@ def _resolve_config_file() -> Path | None:
 
 	config_content = _config_value("OCI_CONFIG_CONTENT", "")
 	if config_content:
-		config_path = Path(os.getenv("TMPDIR", "/tmp")) / "oci_config.toml"
-		config_path.write_text(config_content, encoding="utf-8")
-		return config_path
+		temp_dir = Path(os.getenv("TMPDIR", "/tmp")) / "oci_config"
+		private_key_content = _config_value("OCI_PRIVATE_KEY_CONTENT", "")
+		if private_key_content:
+			private_key_path = _write_temp_file(temp_dir, "oci_api_key.pem", private_key_content)
+			config_content = _rewrite_config_key_file(config_content, private_key_path)
+		return _write_temp_file(temp_dir, "config", config_content)
 
 	default_path = Path(os.path.expanduser("~/.oci/config"))
 	if default_path.exists():
