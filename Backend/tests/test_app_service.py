@@ -1,3 +1,4 @@
+import os
 import sys
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ backend_dir = Path(__file__).resolve().parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.append(str(backend_dir))
 
-from app_service import build_document_folders
+from app_service import build_document_folders, get_documents_dir
 
 
 class AppServiceTests(unittest.TestCase):
@@ -24,6 +25,18 @@ class AppServiceTests(unittest.TestCase):
             self.assertIn("Financiero", {folder["title"] for folder in payload["folders"]})
             self.assertIn("Logística", {folder["title"] for folder in payload["folders"]})
             self.assertTrue(any(folder["files"] for folder in payload["folders"] if folder["title"] == "Financiero"))
+
+    def test_get_documents_dir_uses_environment_override(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            previous = os.environ.get("DOCUMENTS_DIR")
+            os.environ["DOCUMENTS_DIR"] = tmp_dir
+            try:
+                self.assertEqual(Path(tmp_dir).resolve(), get_documents_dir())
+            finally:
+                if previous is None:
+                    os.environ.pop("DOCUMENTS_DIR", None)
+                else:
+                    os.environ["DOCUMENTS_DIR"] = previous
 
 
 if __name__ == "__main__":

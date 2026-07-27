@@ -29,7 +29,19 @@ DEFAULT_PROFILE = "DEFAULT"
 
 
 def _config_value(name: str, default: str) -> str:
-	return os.getenv(name, default).strip()
+	value = os.getenv(name, "").strip()
+	if value:
+		return value
+	try:
+		import streamlit as st
+		secrets = getattr(st, "secrets", None)
+		if secrets:
+			secret_value = secrets.get(name, "")
+			if isinstance(secret_value, str):
+				return secret_value.strip()
+	except Exception:
+		pass
+	return default.strip()
 
 
 def _safe_relative_path(object_name: str, prefix: str) -> Path | None:
@@ -79,19 +91,27 @@ def sync_object_storage(local_folder: str | Path) -> Dict[str, int]:
 	prefix = _config_value("OCI_PREFIX", "").strip("/")
 
 	is_production = os.getenv("ENVIRONMENT") == "production"
-	if is_production:
-		try:
-			signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-			client = oci.object_storage.ObjectStorageClient(config={'region':region}, signer=signer)
-		except Exception as e:
-			print(f"Error al crear el cliente de OCI: {e}")
-			raise e
-	else:
-		config_file = os.getenv("OCI_CONFIG_FILE", "").strip() or os.path.expanduser("~/.oci/config")
-		config = oci.config.from_file(file_location=config_file, profile_name=profile)
-		config["region"] = region
-		client = oci.object_storage.ObjectStorageClient(config)
-		print("Autenticación OCI: Usando ~/.oci/config (Local)")
+	try:
+		if is_production:
+			try:
+				signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+				client = oci.object_storage.ObjectStorageClient(config={'region':region}, signer=signer)
+			except Exception as e:
+				print(f"Error al crear el cliente de OCI con Instance Principals: {e}")
+				raise e
+		else:
+			config_file = os.getenv("OCI_CONFIG_FILE", "").strip() or os.path.expanduser("~/.oci/config")
+			if os.path.exists(config_file):
+				config = oci.config.from_file(file_location=config_file, profile_name=profile)
+				config["region"] = region
+				client = oci.object_storage.ObjectStorageClient(config)
+				print("Autenticación OCI: Usando ~/.oci/config (Local)")
+			else:
+				print("Autenticación OCI: no se encontró ~/.oci/config; se omite la sincronización con el bucket")
+				return {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0, "error": "OCI config not found"}
+	except Exception as exc:
+		print(f"No se pudo inicializar OCI: {exc}")
+		return {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0, "error": str(exc)}
 		
 	remote_paths: set[Path] = set()
 	summary = {"downloaded": 0, "updated": 0, "unchanged": 0, "deleted": 0, "skipped": 0}

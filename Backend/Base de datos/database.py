@@ -80,10 +80,29 @@ class OracleConnection:
         self.close()
 
 
-def _required_setting(name: str) -> str:
+def _get_setting(name: str, default: str = "") -> str:
     value = os.getenv(name, "").strip()
+    if value:
+        return value
+    try:
+        import streamlit as st
+
+        secrets = getattr(st, "secrets", None)
+        if secrets:
+            secret_value = secrets.get(name, "")
+            if isinstance(secret_value, str):
+                return secret_value.strip()
+            if isinstance(secret_value, os.PathLike):
+                return str(secret_value)
+    except Exception:
+        pass
+    return default
+
+
+def _required_setting(name: str) -> str:
+    value = _get_setting(name)
     if not value:
-        raise RuntimeError(f"Falta configurar {name} en el archivo .env")
+        raise RuntimeError(f"Falta configurar {name} en el archivo .env o en Streamlit Secrets")
     return value
 
 
@@ -96,7 +115,7 @@ def get_connection() -> OracleConnection:
     if not config_dir.is_dir():
         raise RuntimeError(f"No existe el directorio del wallet: {config_dir}")
 
-    wallet_location = Path(os.getenv("ORACLE_WALLET_LOCATION", str(config_dir)))
+    wallet_location = Path(_get_setting("ORACLE_WALLET_LOCATION", str(config_dir)))
     if not wallet_location.is_absolute():
         wallet_location = PROJECT_ROOT / wallet_location
 
@@ -106,7 +125,7 @@ def get_connection() -> OracleConnection:
         dsn=_required_setting("ORACLE_DSN"),
         config_dir=str(config_dir),
         wallet_location=str(wallet_location.resolve()),
-        wallet_password=os.getenv("ORACLE_WALLET_PASSWORD") or os.getenv("ORACLE_PASSWORD"),
+        wallet_password=_get_setting("ORACLE_WALLET_PASSWORD") or _get_setting("ORACLE_PASSWORD"),
     )
     return OracleConnection(connection)
 

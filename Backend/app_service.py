@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import traceback
 from functools import lru_cache
 from pathlib import Path
@@ -22,9 +23,55 @@ oracle_cloud_dir = backend_dir / "Oracle cloud"
 if str(oracle_cloud_dir) not in sys.path:
     sys.path.append(str(oracle_cloud_dir))
 
-STATIC_DIR = backend_dir.parent / "Frontend"
-VECTOR_STORE_DIR = backend_dir / "chroma_store"
-DOCUMENTS_DIR = backend_dir / "Documentos Nexus"
+DEFAULT_STATIC_DIR = backend_dir.parent / "Frontend"
+DEFAULT_VECTOR_STORE_DIR = backend_dir / "chroma_store"
+DEFAULT_DOCUMENTS_DIR = backend_dir / "Documentos Nexus"
+
+
+def _get_setting(name: str, default: str = "") -> str:
+    value = os.getenv(name, "").strip()
+    if value:
+        return value
+    try:
+        import streamlit as st
+
+        secrets = getattr(st, "secrets", None)
+        if secrets:
+            secret_value = secrets.get(name, "")
+            if isinstance(secret_value, str):
+                return secret_value.strip()
+            if isinstance(secret_value, os.PathLike):
+                return str(secret_value)
+    except Exception:
+        pass
+    return default
+
+
+def _resolve_path(name: str, default_path: Path) -> Path:
+    raw_value = _get_setting(name, "")
+    if raw_value:
+        candidate = Path(raw_value).expanduser()
+        if not candidate.is_absolute():
+            candidate = (backend_dir.parent / candidate).resolve()
+        return candidate.resolve()
+    return default_path.expanduser().resolve()
+
+
+def get_documents_dir() -> Path:
+    return _resolve_path("DOCUMENTS_DIR", DEFAULT_DOCUMENTS_DIR)
+
+
+def get_static_dir() -> Path:
+    return _resolve_path("STATIC_DIR", DEFAULT_STATIC_DIR)
+
+
+def get_vector_store_dir() -> Path:
+    return _resolve_path("VECTOR_STORE_DIR", DEFAULT_VECTOR_STORE_DIR)
+
+
+STATIC_DIR = get_static_dir()
+VECTOR_STORE_DIR = get_vector_store_dir()
+DOCUMENTS_DIR = get_documents_dir()
 
 
 def _load_pipeline_module() -> Any:
@@ -39,6 +86,10 @@ def _load_pipeline_module() -> Any:
 
 @lru_cache(maxsize=1)
 def get_runtime() -> Dict[str, Any]:
+    documents_dir = get_documents_dir()
+    static_dir = get_static_dir()
+    vector_store_dir = get_vector_store_dir()
+
     try:
         from Indexacion.BaseVectores import ChromaVectorStore
         from RAG.Camada import RAGService
@@ -59,7 +110,8 @@ def get_runtime() -> Dict[str, Any]:
         }
 
     try:
-        vector_store = ChromaVectorStore(persist_directory=VECTOR_STORE_DIR)
+        vector_store_dir.mkdir(parents=True, exist_ok=True)
+        vector_store = ChromaVectorStore(persist_directory=vector_store_dir)
     except Exception as exc:
         error_message = f"No se pudo inicializar el almacén vectorial: {exc}"
         print(error_message)
@@ -84,7 +136,7 @@ def get_runtime() -> Dict[str, Any]:
     pipeline_module = _load_pipeline_module()
 
     try:
-        sync_summary = sync_object_storage(DOCUMENTS_DIR)
+        sync_summary = sync_object_storage(documents_dir)
         print(f"Sincronización desde OCI: {sync_summary}")
     except Exception as exc:
         print(f"No se pudo sincronizar el caché local desde OCI: {exc}")
@@ -101,7 +153,7 @@ def get_runtime() -> Dict[str, Any]:
         print(f"No se pudo validar el registro inicial de documentos: {exc}")
 
     try:
-        print(f"Sincronización inicial: {pipeline_module.check_local_files(DOCUMENTS_DIR, vector_store)}")
+        print(f"Sincronización inicial: {pipeline_module.check_local_files(documents_dir, vector_store)}")
     except FileNotFoundError as exc:
         print(f"No se pudo sincronizar Documentos Nexus: {exc}")
     except Exception as exc:
@@ -117,8 +169,8 @@ def get_runtime() -> Dict[str, Any]:
         "vector_store": vector_store,
         "rag_service": rag_service,
         "pipeline_module": pipeline_module,
-        "documents_dir": DOCUMENTS_DIR,
-        "static_dir": STATIC_DIR,
+        "documents_dir": documents_dir,
+        "static_dir": static_dir,
         "sync_summary": sync_summary,
         "init_error": init_error,
         "loading_error": None,
@@ -126,7 +178,7 @@ def get_runtime() -> Dict[str, Any]:
 
 
 def build_document_folders(base_dir: Path | str | None = None) -> Dict[str, Any]:
-    base = Path(base_dir or DOCUMENTS_DIR).resolve()
+    base = Path(base_dir or get_documents_dir()).resolve()
     docs: List[Dict[str, Any]] = []
     for path in sorted(base.rglob("*")):
         if path.is_file():
@@ -154,7 +206,7 @@ def build_document_folders(base_dir: Path | str | None = None) -> Dict[str, Any]
 
 
 def build_sources_payload(result: Any, documents_dir: Path | None = None) -> List[Dict[str, Any]]:
-    documents_root = Path(documents_dir or DOCUMENTS_DIR).resolve()
+    documents_root = Path(documents_dir or get_documents_dir()).resolve()
     sources: List[Dict[str, Any]] = []
     seen_paths: set[str] = set()
 
@@ -253,12 +305,4 @@ def submit_feedback(log_id: int, rating: int, comment: str | None = None) -> Dic
 
 
 def get_document_payload() -> Dict[str, Any]:
-    return build_document_folders(DOCUMENTS_DIR)
-
-
-def get_documents_dir() -> Path:
-    return DOCUMENTS_DIR
-
-
-def get_static_dir() -> Path:
-    return STATIC_DIR
+    return build_document_folders(get_documents_dir())

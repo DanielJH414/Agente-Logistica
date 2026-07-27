@@ -69,6 +69,30 @@ No necesitan instalación con `pip`:
 
 Para utilizar el reranking y la generación de respuestas, configura las claves de Cohere y Groq en `Backend/modelos/my_keys.py` o mediante el mecanismo de configuración que utilice tu entorno.
 
+## Despliegue en Streamlit Cloud
+
+Para desplegar la app en Streamlit Cloud, el punto de entrada debe ser el archivo `Backend/streamlit_app.py` y las siguientes variables deben configurarse como Secrets de Streamlit:
+
+- `OPENAI_API_KEY` (si se usa por el flujo actual, aunque este proyecto usa Cohere/Groq)
+- `COHERE_API_KEY`
+- `GROQ_API_KEY`
+- `ORACLE_USER`
+- `ORACLE_PASSWORD`
+- `ORACLE_DSN`
+- `ORACLE_CONFIG_DIR`
+- `ORACLE_WALLET_LOCATION`
+- `ORACLE_WALLET_PASSWORD`
+- `OCI_NAMESPACE`
+- `OCI_BUCKET`
+- `OCI_REGION`
+- `OCI_PROFILE`
+- `OCI_PREFIX`
+- `DOCUMENTS_DIR`
+- `VECTOR_STORE_DIR`
+- `STATIC_DIR`
+
+En Streamlit Cloud, el directorio de trabajo debe apuntar a la carpeta `Backend` o el repo debe tener el archivo de entrada correctamente referenciado. La app ahora resuelve rutas de forma segura mediante esas variables, y tolera fallos en Oracle/OCI para que el despliegue no se rompa por configuración incompleta.
+
 ## Configuración de Oracle Cloud Infrastructure
 
 Durante las pruebas locales, configura el archivo de OCI en `~/.oci/config` y verifica que el perfil `DEFAULT` tenga permisos para leer objetos del bucket. No incluyas la clave privada ni otros secretos en el repositorio.

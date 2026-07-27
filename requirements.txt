@@ -5,6 +5,7 @@ oci
 python-dotenv
 oracledb
 pdfplumber
+pypdf
 python-docx
 openpyxl
 cohere
